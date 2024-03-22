@@ -105,7 +105,7 @@ router.put("/:id", upload.single("image"), async (request, response) => {
           }
         });
       }
-      galleryItem.image = request.file.path.replace("uploads\\", "");
+      galleryItem.image = request.file.filename;
     }
 
     // Update other fields if provided
