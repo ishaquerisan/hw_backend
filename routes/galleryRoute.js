@@ -38,7 +38,7 @@ router.post(
       const newGalleryItem = {
         monumentId: request.params.monumentId,
         imgTitle: request.body.imgTitle,
-        image: request.file.path.replace("uploads\\", ""),
+        image: request.file.filename,
       };
 
       // Create a new gallery item using Mongoose model
