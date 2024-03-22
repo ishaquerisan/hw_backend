@@ -7,6 +7,7 @@ import path from "path";
 import mongoose from "mongoose";
 
 const router = express.Router();
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, "uploads/coverimg/");
@@ -33,15 +34,13 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
       !request.body.place
     ) {
       return response.status(400).send({
-        message:
-          "send all required fields : title , shortdescription ,file, description,place",
+        message: "send all required fields : title , description, file, place",
       });
     }
+    const filename = `coverimg/${request.file.filename}`;
     const newmonument = {
       title: request.body.title,
-      // shortdescription: request.body.shortdescription,
       description: request.body.description,
-      // hst_chronology: request.body.hst_chronology,
       ipms_place: request.body.ipms_place,
       archi_imps: request.body.archi_imps,
       past_condition: request.body.past_condition,
@@ -50,10 +49,11 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
       nation: request.body.nation,
       state: request.body.state,
       place: request.body.place,
-      cover_image: request.file.path.replace("uploads\\", ""),
+      cover_image: filename, // Use filename directly without folder path
       user: request.user.id,
       status: 0,
     };
+
     const monument = await Monument.create(newmonument);
 
     return response.status(201).send(monument);
