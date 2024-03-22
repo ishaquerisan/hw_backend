@@ -136,7 +136,9 @@ router.put("/:id", upload.single("cover_image"), async (request, response) => {
           }
         });
       }
-      monument.cover_image = request.file.filename; // Update image or video path with new file
+
+      const filename = `coverimg/${request.file.filename}`;
+      monument.cover_image = filename; // Update image or video path with new file
     }
     monument.title = request.body.title;
     monument.shortdescription = request.body.shortdescription;
