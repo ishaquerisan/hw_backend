@@ -136,7 +136,7 @@ router.put("/:id", upload.single("cover_image"), async (request, response) => {
           }
         });
       }
-      monument.cover_image = request.file.path.replace("uploads\\", ""); // Update image or video path with new file
+      monument.cover_image = request.file.filename; // Update image or video path with new file
     }
     monument.title = request.body.title;
     monument.shortdescription = request.body.shortdescription;
