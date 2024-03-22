@@ -1,8 +1,8 @@
 // index.js
-
+import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
-import { PORT, mongoDBURL } from "./config.js"; // Import your secret key
+// import { PORT, mongoDBURL } from "./config.js"; // Import your secret key
 import mongoose from "mongoose";
 import monumentRoute from "./routes/monumentRoute.js";
 import galleryRoute from "./routes/galleryRoute.js";
@@ -10,6 +10,8 @@ import loginRoute from "./routes/loginRoute.js";
 import adminRoute from "./routes/adminRoute.js";
 import publicRoute from "./routes/publicRoute.js";
 import authenticateToken from "./auth/authMiddleware.js";
+
+dotenv.config();
 
 // import authenticateToken from "./auth/authMiddleware.js"
 const app = express();
@@ -27,11 +29,11 @@ app.use("/users", loginRoute);
 app.use("/admin", authenticateToken, adminRoute);
 app.use("/public", publicRoute);
 mongoose
-  .connect(mongoDBURL)
+  .connect(process.env.MONGOURL)
   .then(() => {
     console.log("app connected to database");
-    app.listen(PORT, () => {
-      console.log(`app is listerning to port: ${PORT}`);
+    app.listen(process.env.PORT, () => {
+      console.log(`app is listerning to port: ${process.env.PORT}`);
     });
   })
   .catch((error) => {

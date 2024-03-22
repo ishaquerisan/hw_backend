@@ -3,7 +3,7 @@ import express from "express";
 import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { secretKey } from "../config.js";
+// import { secretKey } from "../config.js";
 
 const router = express.Router();
 
@@ -50,7 +50,7 @@ router.post("/login", async (req, res) => {
 
     const token = jwt.sign(
       { email: user.email, id: user._id, type: user.type },
-      secretKey
+      process.env.JWTSECRET
     );
 
     res
