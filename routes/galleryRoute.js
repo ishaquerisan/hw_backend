@@ -6,21 +6,28 @@ import path from "path";
 
 const router = express.Router();
 
-// Set up storage using multer
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    // Generate a random number between 1000 and 9999
-    const randomNumber = Math.floor(Math.random() * 9000) + 1000;
-    // Append the random number to the original filename
-    const modifiedFilename = randomNumber + "-" + file.originalname;
-    cb(null, modifiedFilename);
-  },
-});
+import sharp from "sharp";
 
+const storage = multer.memoryStorage(); // Use memory storage to process image with Sharp
 const upload = multer({ storage: storage });
+const compressAndSaveImage = async (file) => {
+  try {
+    //Generate a random number between 1000 and 9999
+    const randomNumber = Math.floor(Math.random() * 9000) + 1000;
+    const compressedFileName = `${
+      file.originalname.split(".")[0] + randomNumber
+    }.jpg`;
+    const compressedImageFilePath = `uploads/${compressedFileName}`;
+
+    await sharp(file.buffer)
+      .jpeg({ quality: 30 }) // Adjust quality as per your requirement
+      .toFile(compressedImageFilePath);
+
+    return compressedFileName;
+  } catch (error) {
+    throw new Error("Error compressing image");
+  }
+};
 
 // POST route to add a new gallery item
 router.post(
@@ -33,12 +40,13 @@ router.post(
           message: "Send all required fields: imgTitle, image",
         });
       }
+      const filename = await compressAndSaveImage(request.file);
 
       // Construct the new gallery item object
       const newGalleryItem = {
         monumentId: request.params.monumentId,
         imgTitle: request.body.imgTitle,
-        image: request.file.filename,
+        image: filename,
       };
 
       // Create a new gallery item using Mongoose model
@@ -93,7 +101,7 @@ router.put("/:id", upload.single("image"), async (request, response) => {
     if (!galleryItem) {
       return response.status(404).json({ message: "Gallery item not found" });
     }
-
+    const filename = await compressAndSaveImage(request.file);
     if (request.file) {
       if (galleryItem.image) {
         const imagePath = path.join("uploads", galleryItem.image);
@@ -105,7 +113,7 @@ router.put("/:id", upload.single("image"), async (request, response) => {
           }
         });
       }
-      galleryItem.image = request.file.filename;
+      galleryItem.image = filename;
     }
 
     // Update other fields if provided

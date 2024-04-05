@@ -7,21 +7,28 @@ import path from "path";
 import mongoose from "mongoose";
 
 const router = express.Router();
+import sharp from "sharp";
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/coverimg/");
-  },
-  filename: function (req, file, cb) {
-    // Generate a random number between 1000 and 9999
-    const randomNumber = Math.floor(Math.random() * 9000) + 1000;
-    // Append the random number to the original filename
-    const modifiedFilename = randomNumber + "-" + file.originalname;
-    cb(null, modifiedFilename);
-  },
-});
-
+const storage = multer.memoryStorage(); // Use memory storage to process image with Sharp
 const upload = multer({ storage: storage });
+const compressAndSaveImage = async (file) => {
+  try {
+    //Generate a random number between 1000 and 9999
+    const randomNumber = Math.floor(Math.random() * 9000) + 1000;
+    const compressedFileName = `${
+      file.originalname.split(".")[0] + randomNumber
+    }.jpg`;
+    const compressedImageFilePath = `uploads/coverimg/${compressedFileName}`;
+
+    await sharp(file.buffer)
+      .jpeg({ quality: 30 }) // Adjust quality as per your requirement
+      .toFile(compressedImageFilePath);
+
+    return compressedFileName;
+  } catch (error) {
+    throw new Error("Error compressing image");
+  }
+};
 
 router.post("/", upload.single("cover_image"), async (request, response) => {
   try {
@@ -34,10 +41,13 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
       !request.body.place
     ) {
       return response.status(400).send({
-        message: "send all required fields : title , description, file, place",
+        message: "send all required fields: title, description, file, place",
       });
     }
-    const filename = `coverimg/${request.file.filename}`;
+
+    const compressedImageFile = await compressAndSaveImage(request.file);
+    const imagename = `/coverimg/${compressedImageFile}`;
+
     const newmonument = {
       title: request.body.title,
       description: request.body.description,
@@ -49,7 +59,7 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
       nation: request.body.nation,
       state: request.body.state,
       place: request.body.place,
-      cover_image: filename, // Use filename directly without folder path
+      cover_image: imagename, // Use compressed image path
       user: request.user.id,
       status: 0,
     };
@@ -62,7 +72,6 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
     response.status(500).send({ message: error.message });
   }
 });
-
 // route get all
 router.get("/", async (request, response) => {
   try {
@@ -137,8 +146,9 @@ router.put("/:id", upload.single("cover_image"), async (request, response) => {
         });
       }
 
-      const filename = `coverimg/${request.file.filename}`;
-      monument.cover_image = filename; // Update image or video path with new file
+      const compressedImageFile = await compressAndSaveImage(request.file);
+      const imagename = `/coverimg/${compressedImageFile}`;
+      monument.cover_image = imagename; // Update image or video path with new file
     }
     monument.title = request.body.title;
     monument.shortdescription = request.body.shortdescription;
