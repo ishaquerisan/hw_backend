@@ -10,23 +10,29 @@ import sharp from "sharp";
 
 const storage = multer.memoryStorage(); // Use memory storage to process image with Sharp
 const upload = multer({ storage: storage });
+
 const compressAndSaveImage = async (file) => {
   try {
-    //Generate a random number between 1000 and 9999
     const randomNumber = Math.floor(Math.random() * 9000) + 1000;
     const compressedFileName = `${
-      file.originalname.split(".")[0] + randomNumber
-    }.jpg`;
-    const compressedImageFilePath = `uploads/${compressedFileName}`;
+      file.originalname.split(".")[0]
+    }${randomNumber}.jpg`;
 
-    await sharp(file.buffer)
+    const compressedImage = await sharp(file.buffer)
       .jpeg({ quality: 30 }) // Adjust quality as per your requirement
-      .toFile(compressedImageFilePath);
+      .toBuffer();
 
-    return compressedFileName;
+    return {
+      fileName: compressedFileName,
+      buffer: compressedImage,
+    };
   } catch (error) {
     throw new Error("Error compressing image");
   }
+};
+
+const convertImageToBase64 = (buffer) => {
+  return `data:image/jpeg;base64,${buffer.toString("base64")}`;
 };
 
 // POST route to add a new gallery item
@@ -40,13 +46,14 @@ router.post(
           message: "Send all required fields: imgTitle, image",
         });
       }
-      const filename = await compressAndSaveImage(request.file);
+      const { fileName, buffer } = await compressAndSaveImage(request.file);
+      const base64Image = convertImageToBase64(buffer);
 
       // Construct the new gallery item object
       const newGalleryItem = {
         monumentId: request.params.monumentId,
         imgTitle: request.body.imgTitle,
-        image: filename,
+        image: base64Image,
       };
 
       // Create a new gallery item using Mongoose model
@@ -101,7 +108,8 @@ router.put("/:id", upload.single("image"), async (request, response) => {
     if (!galleryItem) {
       return response.status(404).json({ message: "Gallery item not found" });
     }
-    const filename = await compressAndSaveImage(request.file);
+    const { fileName, buffer } = await compressAndSaveImage(request.file);
+    const base64Image = convertImageToBase64(buffer);
     if (request.file) {
       if (galleryItem.image) {
         const imagePath = path.join("uploads", galleryItem.image);
@@ -113,7 +121,7 @@ router.put("/:id", upload.single("image"), async (request, response) => {
           }
         });
       }
-      galleryItem.image = filename;
+      galleryItem.image = base64Image;
     }
 
     // Update other fields if provided

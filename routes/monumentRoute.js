@@ -11,23 +11,29 @@ import sharp from "sharp";
 
 const storage = multer.memoryStorage(); // Use memory storage to process image with Sharp
 const upload = multer({ storage: storage });
+
 const compressAndSaveImage = async (file) => {
   try {
-    //Generate a random number between 1000 and 9999
     const randomNumber = Math.floor(Math.random() * 9000) + 1000;
     const compressedFileName = `${
-      file.originalname.split(".")[0] + randomNumber
-    }.jpg`;
-    const compressedImageFilePath = `uploads/coverimg/${compressedFileName}`;
+      file.originalname.split(".")[0]
+    }${randomNumber}.jpg`;
 
-    await sharp(file.buffer)
+    const compressedImage = await sharp(file.buffer)
       .jpeg({ quality: 30 }) // Adjust quality as per your requirement
-      .toFile(compressedImageFilePath);
+      .toBuffer();
 
-    return compressedFileName;
+    return {
+      fileName: compressedFileName,
+      buffer: compressedImage,
+    };
   } catch (error) {
     throw new Error("Error compressing image");
   }
+};
+
+const convertImageToBase64 = (buffer) => {
+  return `data:image/jpeg;base64,${buffer.toString("base64")}`;
 };
 
 router.post("/", upload.single("cover_image"), async (request, response) => {
@@ -45,8 +51,8 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
       });
     }
 
-    const compressedImageFile = await compressAndSaveImage(request.file);
-    const imagename = `/coverimg/${compressedImageFile}`;
+    const { fileName, buffer } = await compressAndSaveImage(request.file);
+    const base64Image = convertImageToBase64(buffer);
 
     const newmonument = {
       title: request.body.title,
@@ -59,7 +65,7 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
       nation: request.body.nation,
       state: request.body.state,
       place: request.body.place,
-      cover_image: imagename, // Use compressed image path
+      cover_image: base64Image, // Use Base64 encoded image string
       user: request.user.id,
       status: 0,
     };
@@ -132,25 +138,25 @@ router.put("/:id", upload.single("cover_image"), async (request, response) => {
 
     // Check if a new image or video is uploaded
     if (request.file) {
-      // Delete previous image or video if exists
-      if (monument.cover_image) {
-        const imagePath = path.join(
-          "uploads",
-          "coverimg",
-          monument.cover_image
-        );
-        fs.unlink(imagePath, (err) => {
-          if (err) {
-            console.error("Error deleting image:", err);
-          } else {
-            console.log("Image deleted successfully");
-          }
-        });
-      }
+      // // Delete previous image or video if exists
+      // if (monument.cover_image) {
+      //   const imagePath = path.join(
+      //     "uploads",
+      //     "coverimg",
+      //     monument.cover_image
+      //   );
+      //   fs.unlink(imagePath, (err) => {
+      //     if (err) {
+      //       console.error("Error deleting image:", err);
+      //     } else {
+      //       console.log("Image deleted successfully");
+      //     }
+      //   });
+      // }
 
-      const compressedImageFile = await compressAndSaveImage(request.file);
-      const imagename = `/coverimg/${compressedImageFile}`;
-      monument.cover_image = imagename; // Update image or video path with new file
+      const { fileName, buffer } = await compressAndSaveImage(request.file);
+      const base64Image = convertImageToBase64(buffer);
+      monument.cover_image = base64Image; // Update image or video path with new file
     }
     monument.title = request.body.title;
     monument.shortdescription = request.body.shortdescription;
