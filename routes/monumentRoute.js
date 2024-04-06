@@ -99,6 +99,8 @@ router.get("/:id", async (request, response) => {
     const { id } = request.params;
 
     const monument = await Monument.findById(id);
+    // const user = await User.findById(monument.user);
+    // monument.username = user.name;
 
     return response.status(200).json(monument);
   } catch (error) {

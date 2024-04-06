@@ -39,9 +39,20 @@ router.get("/:id", async (request, response) => {
   try {
     const { id } = request.params;
 
-    const monument = await Monument.findById(id);
+    // Fetch monument data
+    const monumentPromise = Monument.findById(id);
 
-    return response.status(200).json(monument);
+    // Fetch user data
+    const monument = await monumentPromise;
+    const user = await User.findById(monument.user); // Assuming userId is the field linking to the User table
+
+    // Combine monument and user data into one dictionary
+    const combinedData = {
+      monument: monument,
+      userName: user.name, // Assuming 'name' is the field you want from the User table
+    };
+
+    return response.status(200).json(combinedData);
   } catch (error) {
     console.log(error.message);
     response.status(500).send({ message: error.message });
