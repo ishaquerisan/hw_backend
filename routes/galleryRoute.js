@@ -8,31 +8,45 @@ const router = express.Router();
 
 import sharp from "sharp";
 
-const storage = multer.memoryStorage(); // Use memory storage to process image with Sharp
+// Memory storage configuration
+const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-const compressAndSaveImage = async (file) => {
+// Compress and save function for both image and video
+const compressAndSaveFile = async (file) => {
   try {
     const randomNumber = Math.floor(Math.random() * 9000) + 1000;
-    const compressedFileName = `${
-      file.originalname.split(".")[0]
-    }${randomNumber}.jpg`;
+    let compressedFileName;
 
-    const compressedImage = await sharp(file.buffer)
-      .jpeg({ quality: 30 }) // Adjust quality as per your requirement
-      .toBuffer();
+    let compressedFile;
+
+    if (file.mimetype.startsWith("video")) {
+      // Handle video compression if needed
+      // For now, we're just returning the original video file without compression
+      compressedFileName = `${
+        file.originalname.split(".")[0]
+      }${randomNumber}.mp4`;
+      compressedFile = file.buffer;
+    } else {
+      compressedFileName = `${
+        file.originalname.split(".")[0]
+      }${randomNumber}.jpg`;
+      compressedFile = await sharp(file.buffer)
+        .jpeg({ quality: 30 })
+        .toBuffer();
+    }
 
     return {
       fileName: compressedFileName,
-      buffer: compressedImage,
+      buffer: compressedFile,
     };
   } catch (error) {
-    throw new Error("Error compressing image");
+    throw new Error("Error compressing file");
   }
 };
-
-const convertImageToBase64 = (buffer) => {
-  return `data:image/jpeg;base64,${buffer.toString("base64")}`;
+// Convert buffer to Base64
+const convertToBase64 = (buffer, mimetype) => {
+  return `data:${mimetype};base64,${buffer.toString("base64")}`;
 };
 
 // POST route to add a new gallery item
@@ -46,9 +60,8 @@ router.post(
           message: "Send all required fields: imgTitle, image",
         });
       }
-      const { fileName, buffer } = await compressAndSaveImage(request.file);
-      const base64Image = convertImageToBase64(buffer);
-
+      const { fileName, buffer } = await compressAndSaveFile(request.file);
+      const base64Image = convertToBase64(buffer, request.file.mimetype);
       // Construct the new gallery item object
       const newGalleryItem = {
         monumentId: request.params.monumentId,
