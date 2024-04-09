@@ -1,12 +1,31 @@
 import express from "express";
+import dotenv from "dotenv";
 import multer from "multer";
 import Gallery from "../models/galleryModel.js";
-import fs from "fs";
-import path from "path";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import sharp from "sharp";
 
+dotenv.config();
 const router = express.Router();
 
-import sharp from "sharp";
+const awsAccessKey = process.env.AWS_ACCESS_KEY;
+const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+const awsBucketName = process.env.AWS_BUCKET_NAME;
+const awsBucketRegion = process.env.AWS_BUCKET_REGION;
+
+const s3 = new S3Client({
+  credentials: {
+    accessKeyId: awsAccessKey,
+    secretAccessKey: awsSecretAccessKey,
+  },
+  region: awsBucketRegion,
+});
 
 // Memory storage configuration
 const storage = multer.memoryStorage();
@@ -15,9 +34,8 @@ const upload = multer({ storage: storage });
 // Compress and save function for both image and video
 const compressAndSaveFile = async (file) => {
   try {
-    const randomNumber = Math.floor(Math.random() * 9000) + 1000;
+    const randomNumber = Math.floor(Math.random() * 1000000) + 1000000;
     let compressedFileName;
-
     let compressedFile;
 
     if (file.mimetype.startsWith("video")) {
@@ -44,10 +62,6 @@ const compressAndSaveFile = async (file) => {
     throw new Error("Error compressing file");
   }
 };
-// Convert buffer to Base64
-const convertToBase64 = (buffer, mimetype) => {
-  return `data:${mimetype};base64,${buffer.toString("base64")}`;
-};
 
 // POST route to add a new gallery item
 router.post(
@@ -61,15 +75,24 @@ router.post(
         });
       }
       const { fileName, buffer } = await compressAndSaveFile(request.file);
-      const base64Image = convertToBase64(buffer, request.file.mimetype);
-      // Construct the new gallery item object
+
+      const params = {
+        Bucket: awsBucketName,
+        Key: fileName,
+        Body: buffer,
+        ContentType: request.file.mimetype,
+      };
+
+      const command = new PutObjectCommand(params);
+
+      await s3.send(command);
+
       const newGalleryItem = {
         monumentId: request.params.monumentId,
         imgTitle: request.body.imgTitle,
-        image: base64Image,
+        image: fileName,
       };
 
-      // Create a new gallery item using Mongoose model
       const galleryItem = await Gallery.create(newGalleryItem);
 
       return response.status(201).json(galleryItem);
@@ -80,20 +103,28 @@ router.post(
   }
 );
 
-// GET route to retrieve  gallery items for monument
 router.get("/monument/:monumentId", async (request, response) => {
   try {
-    // const id = "65cf253a709063993bd5362b";
-    // const galleryItems = await Gallery.find({
-    //   monumentId: id,
-    // });
     const galleryItems = await Gallery.find({
       monumentId: request.params.monumentId,
     });
-    // setTimeout(() => {
-    //   console.log(galleryItems);
-    // }, 500);
-    return response.status(200).json(galleryItems);
+
+    const updatedGalleryItems = [];
+    for (const galleryItem of galleryItems) {
+      const getObjectParams = {
+        Bucket: awsBucketName,
+        Key: galleryItem.image,
+      };
+
+      const command = new GetObjectCommand(getObjectParams);
+      const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+      const updatedGalleryItem = {
+        ...galleryItem.toObject(),
+        imageUrl: url,
+      };
+      updatedGalleryItems.push(updatedGalleryItem);
+    }
+    return response.status(200).json(updatedGalleryItems);
   } catch (error) {
     console.error(error.message);
     return response.status(500).send({ message: "Internal Server Error" });
@@ -107,7 +138,21 @@ router.get("/:id", async (request, response) => {
     if (!galleryItem) {
       return response.status(404).send({ message: "Gallery item not found" });
     }
-    return response.status(200).json(galleryItem);
+
+    const getObjectParams = {
+      Bucket: awsBucketName,
+      Key: galleryItem.image,
+    };
+
+    const command = new GetObjectCommand(getObjectParams);
+    const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+
+    const updatedGalleryItem = {
+      ...galleryItem.toObject(),
+      imageUrl: url,
+    };
+
+    return response.status(200).json(updatedGalleryItem);
   } catch (error) {
     console.error(error.message);
     return response.status(500).send({ message: "Internal Server Error" });
@@ -121,23 +166,39 @@ router.put("/:id", upload.single("image"), async (request, response) => {
     if (!galleryItem) {
       return response.status(404).json({ message: "Gallery item not found" });
     }
-    const { fileName, buffer } = await compressAndSaveFile(request.file);
-    const base64Image = convertToBase64(buffer, request.file.mimetype);
+
+    let oldImageKey = galleryItem.image;
 
     if (request.file) {
-      galleryItem.image = base64Image;
+      const { fileName, buffer } = await compressAndSaveFile(request.file);
+
+      const params = {
+        Bucket: awsBucketName,
+        Key: fileName,
+        Body: buffer,
+        ContentType: request.file.mimetype,
+      };
+
+      const command = new PutObjectCommand(params);
+
+      await s3.send(command);
+
+      galleryItem.image = fileName;
+
+      const deleteOldParams = {
+        Bucket: awsBucketName,
+        Key: oldImageKey,
+      };
+
+      const deleteOldCommand = new DeleteObjectCommand(deleteOldParams);
+      await s3.send(deleteOldCommand);
     }
 
-    // Update other fields if provided
     if (request.body.imgTitle) {
       galleryItem.imgTitle = request.body.imgTitle;
     }
 
-    //   if (image) {
-    //     galleryItem.image = image;
-    //   }
-    // Save the updated gallery item
-    galleryItem = await galleryItem.save();
+    await galleryItem.save();
 
     return response.status(200).json(galleryItem);
   } catch (error) {
@@ -146,7 +207,6 @@ router.put("/:id", upload.single("image"), async (request, response) => {
   }
 });
 
-// DELETE route to delete a specific gallery item by ID
 router.delete("/:id", async (request, response) => {
   try {
     const galleryItem = await Gallery.findByIdAndDelete(request.params.id);
@@ -154,14 +214,13 @@ router.delete("/:id", async (request, response) => {
       return response.status(404).send({ message: "Gallery item not found" });
     }
 
-    const imagePath = path.join("uploads", galleryItem.image);
-    fs.unlink(imagePath, (err) => {
-      if (err) {
-        console.error("Error deleting image:", err);
-      } else {
-        console.log("Image deleted successfully");
-      }
-    });
+    const deleteParams = {
+      Bucket: awsBucketName,
+      Key: galleryItem.image,
+    };
+
+    const command = new DeleteObjectCommand(deleteParams);
+    await s3.send(command);
 
     return response
       .status(200)

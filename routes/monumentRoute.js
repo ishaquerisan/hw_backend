@@ -2,12 +2,34 @@ import express from "express";
 import Monument from "../models/monumentModel.js";
 import User from "../models/userModel.js";
 import multer from "multer";
-import fs, { copyFileSync } from "fs";
+import fs from "fs";
 import path from "path";
-import mongoose from "mongoose";
+import sharp from "sharp";
+import dotenv from "dotenv";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+dotenv.config();
 
 const router = express.Router();
-import sharp from "sharp";
+
+const awsAccessKey = process.env.AWS_ACCESS_KEY;
+const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+const awsBucketName = process.env.AWS_BUCKET_NAME;
+const awsBucketRegion = process.env.AWS_BUCKET_REGION;
+
+const s3 = new S3Client({
+  credentials: {
+    accessKeyId: awsAccessKey,
+    secretAccessKey: awsSecretAccessKey,
+  },
+  region: awsBucketRegion,
+});
 
 const storage = multer.memoryStorage(); // Use memory storage to process image with Sharp
 const upload = multer({ storage: storage });
@@ -52,7 +74,16 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
     }
 
     const { fileName, buffer } = await compressAndSaveImage(request.file);
-    const base64Image = convertImageToBase64(buffer);
+
+    const params = {
+      Bucket: awsBucketName,
+      Key: fileName,
+      Body: buffer,
+      ContentType: request.file.mimetype,
+    };
+    const command = new PutObjectCommand(params);
+
+    await s3.send(command);
 
     const newmonument = {
       title: request.body.title,
@@ -65,7 +96,7 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
       nation: request.body.nation,
       state: request.body.state,
       place: request.body.place,
-      cover_image: base64Image, // Use Base64 encoded image string
+      cover_image: fileName,
       user: request.user.id,
       status: 0,
     };
@@ -78,24 +109,41 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
     response.status(500).send({ message: error.message });
   }
 });
-// route get all
+
 router.get("/", async (request, response) => {
   try {
-    let monument = undefined;
+    let monuments = undefined;
 
     const users = await User.findById(request.user.id);
     if (users.type == "user")
-      monument = await Monument.find({ user: request.user.id });
-    else if (users.type == "admin") monument = await Monument.find();
+      monuments = await Monument.find({ user: request.user.id });
+    else if (users.type == "admin") monuments = await Monument.find();
     else throw `Account Type Error. Got type : ${users.type}`;
 
+    const updatedMonuments = [];
+    for (const monument of monuments) {
+      const getObjectParams = {
+        Bucket: awsBucketName,
+        Key: monument.cover_image,
+      };
+
+      const command = new GetObjectCommand(getObjectParams);
+      const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+
+      const updatedMonument = {
+        ...monument.toObject(),
+        imageUrl: url,
+        userType: users.type,
+      };
+      updatedMonuments.push(updatedMonument);
+    }
+
     const data = {
-      monument: monument,
+      monument: updatedMonuments,
       userType: users.type,
     };
     return response.status(200).json(data);
   } catch (error) {
-    console.log(error.message);
     response.status(500).send({ message: error.message });
   }
 });
@@ -105,10 +153,23 @@ router.get("/:id", async (request, response) => {
     const { id } = request.params;
 
     const monument = await Monument.findById(id);
-    // const user = await User.findById(monument.user);
-    // monument.username = user.name;
+    if (!monument) {
+      return response.status(404).send({ message: "Monument item not found" });
+    }
 
-    return response.status(200).json(monument);
+    const getObjectParams = {
+      Bucket: awsBucketName,
+      Key: monument.cover_image,
+    };
+    const command = new GetObjectCommand(getObjectParams);
+    const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+
+    const updatedMonumentItem = {
+      ...monument.toObject(),
+      imageUrl: url,
+    };
+
+    return response.status(200).json(updatedMonumentItem);
   } catch (error) {
     console.log(error.message);
     response.status(500).send({ message: error.message });
@@ -116,6 +177,7 @@ router.get("/:id", async (request, response) => {
 });
 
 //update
+
 router.put("/:id", upload.single("cover_image"), async (request, response) => {
   try {
     if (
@@ -127,37 +189,44 @@ router.put("/:id", upload.single("cover_image"), async (request, response) => {
     ) {
       return response.status(400).send({
         message:
-          "send all required fields : title , shortdescription , description",
+          "send all required fields: title, shortdescription, description, nation, state, place",
       });
     }
+
     const { id } = request.params;
     const monument = await Monument.findById(id);
+
     if (!monument) {
       return response.status(404).json({ message: "Monument is not found" });
     }
 
-    // Check if a new image or video is uploaded
-    if (request.file) {
-      // // Delete previous image or video if exists
-      // if (monument.cover_image) {
-      //   const imagePath = path.join(
-      //     "uploads",
-      //     "coverimg",
-      //     monument.cover_image
-      //   );
-      //   fs.unlink(imagePath, (err) => {
-      //     if (err) {
-      //       console.error("Error deleting image:", err);
-      //     } else {
-      //       console.log("Image deleted successfully");
-      //     }
-      //   });
-      // }
+    let oldCoverImage = monument.cover_image;
 
+    if (request.file) {
       const { fileName, buffer } = await compressAndSaveImage(request.file);
-      const base64Image = convertImageToBase64(buffer);
-      monument.cover_image = base64Image; // Update image or video path with new file
+
+      const params = {
+        Bucket: awsBucketName,
+        Key: fileName,
+        Body: buffer,
+        ContentType: request.file.mimetype,
+      };
+
+      const command = new PutObjectCommand(params);
+
+      await s3.send(command);
+
+      monument.cover_image = fileName;
+
+      const deleteOldParams = {
+        Bucket: awsBucketName,
+        Key: oldCoverImage,
+      };
+
+      const deleteOldCommand = new DeleteObjectCommand(deleteOldParams);
+      await s3.send(deleteOldCommand);
     }
+
     monument.title = request.body.title;
     monument.shortdescription = request.body.shortdescription;
     monument.description = request.body.description;
@@ -171,13 +240,9 @@ router.put("/:id", upload.single("cover_image"), async (request, response) => {
     monument.present_condition = request.body.present_condition;
     monument.archi_imps = request.body.archi_imps;
     monument.status = 0;
-    // Save the updated monument
+
     await monument.save();
 
-    // const result = await Monument.findByIdAndUpdate(id, request.body);
-    // if (!result) {
-    //   return response.status(404).json({ mesage: "monument not found " });
-    // }
     return response
       .status(200)
       .json({ message: "Monument updated successfully" });
@@ -191,19 +256,17 @@ router.put("/:id", upload.single("cover_image"), async (request, response) => {
 router.delete("/:id", async (request, response) => {
   try {
     const { id } = request.params;
-    const result = await Monument.findByIdAndDelete(id);
-    if (!result) {
+    const monument = await Monument.findByIdAndDelete(id);
+    if (!monument) {
       return response.status(404).json({ mesage: "monument not found " });
     }
+    const deleteParams = {
+      Bucket: awsBucketName,
+      Key: monument.cover_image,
+    };
 
-    const imagePath = path.join("uploads", "coverimg", result.cover_image);
-    fs.unlink(imagePath, (err) => {
-      if (err) {
-        console.error("Error deleting image:", err);
-      } else {
-        console.log("Image deleted successfully");
-      }
-    });
+    const command = new DeleteObjectCommand(deleteParams);
+    await s3.send(command);
 
     return response
       .status(200)
