@@ -14,51 +14,58 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
+import { compressAndSaveFile } from "../utils/fileHandler.js";
+import { deletefilewithfoldername } from "../utils/fileHandler.js";
+
 dotenv.config();
 
 const router = express.Router();
 
-const awsAccessKey = process.env.AWS_ACCESS_KEY;
-const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-const awsBucketName = process.env.AWS_BUCKET_NAME;
-const awsBucketRegion = process.env.AWS_BUCKET_REGION;
+// const awsAccessKey = process.env.AWS_ACCESS_KEY;
+// const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+// const awsBucketName = process.env.AWS_BUCKET_NAME;
+// const awsBucketRegion = process.env.AWS_BUCKET_REGION;
 
-const s3 = new S3Client({
-  credentials: {
-    accessKeyId: awsAccessKey,
-    secretAccessKey: awsSecretAccessKey,
-  },
-  region: awsBucketRegion,
+// const s3 = new S3Client({
+//   credentials: {
+//     accessKeyId: awsAccessKey,
+//     secretAccessKey: awsSecretAccessKey,
+//   },
+//   region: awsBucketRegion,
+// });
+
+const mStorage = multer.memoryStorage();
+const upload = multer({
+  storage: mStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
 });
 
-const storage = multer.memoryStorage(); // Use memory storage to process image with Sharp
-const upload = multer({ storage: storage });
+// const compressAndSaveImage = async (file) => {
+//   try {
+//     const randomNumber = Math.floor(Math.random() * 9000) + 1000;
+//     const compressedFileName = `${
+//       file.originalname.split(".")[0]
+//     }${randomNumber}.jpg`;
 
-const compressAndSaveImage = async (file) => {
-  try {
-    const randomNumber = Math.floor(Math.random() * 9000) + 1000;
-    const compressedFileName = `${
-      file.originalname.split(".")[0]
-    }${randomNumber}.jpg`;
+//     const compressedImage = await sharp(file.buffer)
+//       .jpeg({ quality: 30 }) // Adjust quality as per your requirement
+//       .toBuffer();
 
-    const compressedImage = await sharp(file.buffer)
-      .jpeg({ quality: 30 }) // Adjust quality as per your requirement
-      .toBuffer();
-
-    return {
-      fileName: compressedFileName,
-      buffer: compressedImage,
-    };
-  } catch (error) {
-    throw new Error("Error compressing image");
-  }
-};
+//     return {
+//       fileName: compressedFileName,
+//       buffer: compressedImage,
+//     };
+//   } catch (error) {
+//     throw new Error("Error compressing image");
+//   }
+// };
 
 const convertImageToBase64 = (buffer) => {
   return `data:image/jpeg;base64,${buffer.toString("base64")}`;
 };
 
 router.post("/", upload.single("cover_image"), async (request, response) => {
+  const uploadPath = "uploads/coverimg/";
   try {
     if (
       !request.body.title ||
@@ -72,18 +79,22 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
         message: "send all required fields: title, description, file, place",
       });
     }
+    let fileName = null;
 
-    const { fileName, buffer } = await compressAndSaveImage(request.file);
+    if (request.file) {
+      fileName = await compressAndSaveFile(request.file, uploadPath);
+    }
+    // const { fileName, buffer } = await compressAndSaveFile(request.file);
 
-    const params = {
-      Bucket: awsBucketName,
-      Key: fileName,
-      Body: buffer,
-      ContentType: request.file.mimetype,
-    };
-    const command = new PutObjectCommand(params);
+    // const params = {
+    //   Bucket: awsBucketName,
+    //   Key: fileName,
+    //   Body: buffer,
+    //   ContentType: request.file.mimetype,
+    // };
+    // const command = new PutObjectCommand(params);
 
-    await s3.send(command);
+    // await s3.send(command);
 
     const newmonument = {
       title: request.body.title,
@@ -105,6 +116,7 @@ router.post("/", upload.single("cover_image"), async (request, response) => {
 
     return response.status(201).send(monument);
   } catch (error) {
+    deletefilewithfoldername(request.file, uploadPath);
     console.log(error.message);
     response.status(500).send({ message: error.message });
   }
@@ -122,17 +134,17 @@ router.get("/", async (request, response) => {
 
     const updatedMonuments = [];
     for (const monument of monuments) {
-      const getObjectParams = {
-        Bucket: awsBucketName,
-        Key: monument.cover_image,
-      };
+      // const getObjectParams = {
+      //   Bucket: awsBucketName,
+      //   Key: monument.cover_image,
+      // };
 
-      const command = new GetObjectCommand(getObjectParams);
-      const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+      // const command = new GetObjectCommand(getObjectParams);
+      // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
 
       const updatedMonument = {
         ...monument.toObject(),
-        imageUrl: url,
+        imageUrl: "uploads/coverimg/" + monument.cover_image,
         userType: users.type,
       };
       updatedMonuments.push(updatedMonument);
@@ -157,16 +169,16 @@ router.get("/:id", async (request, response) => {
       return response.status(404).send({ message: "Monument item not found" });
     }
 
-    const getObjectParams = {
-      Bucket: awsBucketName,
-      Key: monument.cover_image,
-    };
-    const command = new GetObjectCommand(getObjectParams);
-    const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    // const getObjectParams = {
+    //   Bucket: awsBucketName,
+    //   Key: monument.cover_image,
+    // };
+    // const command = new GetObjectCommand(getObjectParams);
+    // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
 
     const updatedMonumentItem = {
       ...monument.toObject(),
-      imageUrl: url,
+      imageUrl: "uploads/coverimg/" + monument.cover_image,
     };
 
     return response.status(200).json(updatedMonumentItem);
@@ -202,29 +214,31 @@ router.put("/:id", upload.single("cover_image"), async (request, response) => {
 
     let oldCoverImage = monument.cover_image;
 
+    let fileName = oldCoverImage;
+
     if (request.file) {
-      const { fileName, buffer } = await compressAndSaveImage(request.file);
+      const uploadPath = "uploads/coverimg/";
+      fileName = await compressAndSaveFile(request.file, uploadPath);
+      deletefilewithfoldername(oldCoverImage, uploadPath);
 
-      const params = {
-        Bucket: awsBucketName,
-        Key: fileName,
-        Body: buffer,
-        ContentType: request.file.mimetype,
-      };
+      // const params = {
+      //   Bucket: awsBucketName,
+      //   Key: fileName,
+      //   Body: buffer,
+      //   ContentType: request.file.mimetype,
+      // };
 
-      const command = new PutObjectCommand(params);
+      // const command = new PutObjectCommand(params);
 
-      await s3.send(command);
+      // await s3.send(command);
 
-      monument.cover_image = fileName;
+      // const deleteOldParams = {
+      //   Bucket: awsBucketName,
+      //   Key: oldCoverImage,
+      // };
 
-      const deleteOldParams = {
-        Bucket: awsBucketName,
-        Key: oldCoverImage,
-      };
-
-      const deleteOldCommand = new DeleteObjectCommand(deleteOldParams);
-      await s3.send(deleteOldCommand);
+      // const deleteOldCommand = new DeleteObjectCommand(deleteOldParams);
+      // await s3.send(deleteOldCommand);
     }
 
     monument.title = request.body.title;
@@ -239,6 +253,7 @@ router.put("/:id", upload.single("cover_image"), async (request, response) => {
     monument.past_condition = request.body.past_condition;
     monument.present_condition = request.body.present_condition;
     monument.archi_imps = request.body.archi_imps;
+    monument.cover_image = fileName;
     monument.status = 0;
 
     await monument.save();

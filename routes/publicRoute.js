@@ -29,17 +29,17 @@ router.get("/", async (request, response) => {
     const monuments = await Monument.find({ status: 1 });
     const updatedMonuments = [];
     for (const monument of monuments) {
-      const getObjectParams = {
-        Bucket: awsBucketName,
-        Key: monument.cover_image,
-      };
+      // const getObjectParams = {
+      //   Bucket: awsBucketName,
+      //   Key: monument.cover_image,
+      // };
 
-      const command = new GetObjectCommand(getObjectParams);
-      const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+      // const command = new GetObjectCommand(getObjectParams);
+      // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
 
       const updatedMonument = {
         ...monument.toObject(),
-        imageUrl: url,
+        imageUrl: "uploads/coverimg/" + monument.cover_image,
       };
       updatedMonuments.push(updatedMonument);
     }
@@ -60,17 +60,17 @@ router.get("/latest3/", async (request, response) => {
 
     const updatedMonuments = [];
     for (const monument of monuments) {
-      const getObjectParams = {
-        Bucket: awsBucketName,
-        Key: monument.cover_image,
-      };
+      // const getObjectParams = {
+      //   Bucket: awsBucketName,
+      //   Key: monument.cover_image,
+      // };
 
-      const command = new GetObjectCommand(getObjectParams);
-      const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+      // const command = new GetObjectCommand(getObjectParams);
+      // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
 
       const updatedMonument = {
         ...monument.toObject(),
-        imageUrl: url,
+        imageUrl: "uploads/coverimg/" + monument.cover_image,
       };
       updatedMonuments.push(updatedMonument);
     }
@@ -89,16 +89,16 @@ router.get("/:id", async (request, response) => {
     // Fetch monument data
     const monument = await Monument.findById(id);
 
-    const getObjectParams = {
-      Bucket: awsBucketName,
-      Key: monument.cover_image,
-    };
-    const command = new GetObjectCommand(getObjectParams);
-    const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    // const getObjectParams = {
+    //   Bucket: awsBucketName,
+    //   Key: monument.cover_image,
+    // };
+    // const command = new GetObjectCommand(getObjectParams);
+    // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
 
     const updatedMonumentItem = {
       ...monument.toObject(),
-      imageUrl: url,
+      imageUrl: "uploads/coverimg/" + monument.cover_image,
     };
 
     const user = await User.findById(monument.user); // Assuming userId is the field linking to the User table
@@ -124,16 +124,16 @@ router.get("/monument/:monumentId", async (request, response) => {
 
     const updatedGalleryItems = [];
     for (const galleryItem of galleryItems) {
-      const getObjectParams = {
-        Bucket: awsBucketName,
-        Key: galleryItem.image,
-      };
+      // const getObjectParams = {
+      //   Bucket: awsBucketName,
+      //   Key: galleryItem.image,
+      // };
 
-      const command = new GetObjectCommand(getObjectParams);
-      const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+      // const command = new GetObjectCommand(getObjectParams);
+      // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
       const updatedGalleryItem = {
         ...galleryItem.toObject(),
-        imageUrl: url,
+        imageUrl: "uploads/gallery/" + galleryItem.image,
       };
       updatedGalleryItems.push(updatedGalleryItem);
     }

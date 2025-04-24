@@ -10,82 +10,58 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import sharp from "sharp";
-
+import { compressAndSaveImageorVideo } from "../utils/fileHandler.js";
+import { deletefilewithfoldername } from "../utils/fileHandler.js";
+import { upload } from "../middlewares/upload.js";
+import d from "d";
 dotenv.config();
 const router = express.Router();
 
-const awsAccessKey = process.env.AWS_ACCESS_KEY;
-const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-const awsBucketName = process.env.AWS_BUCKET_NAME;
-const awsBucketRegion = process.env.AWS_BUCKET_REGION;
+// const awsAccessKey = process.env.AWS_ACCESS_KEY;
+// const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+// const awsBucketName = process.env.AWS_BUCKET_NAME;
+// const awsBucketRegion = process.env.AWS_BUCKET_REGION;
 
-const s3 = new S3Client({
-  credentials: {
-    accessKeyId: awsAccessKey,
-    secretAccessKey: awsSecretAccessKey,
-  },
-  region: awsBucketRegion,
-});
-
-// Memory storage configuration
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
-
-// Compress and save function for both image and video
-const compressAndSaveFile = async (file) => {
-  try {
-    const randomNumber = Math.floor(Math.random() * 1000000) + 1000000;
-    let compressedFileName;
-    let compressedFile;
-
-    if (file.mimetype.startsWith("video")) {
-      // Handle video compression if needed
-      // For now, we're just returning the original video file without compression
-      compressedFileName = `${
-        file.originalname.split(".")[0]
-      }${randomNumber}.mp4`;
-      compressedFile = file.buffer;
-    } else {
-      compressedFileName = `${
-        file.originalname.split(".")[0]
-      }${randomNumber}.jpg`;
-      compressedFile = await sharp(file.buffer)
-        .jpeg({ quality: 30 })
-        .toBuffer();
-    }
-
-    return {
-      fileName: compressedFileName,
-      buffer: compressedFile,
-    };
-  } catch (error) {
-    throw new Error("Error compressing file");
-  }
-};
+// const s3 = new S3Client({
+//   credentials: {
+//     accessKeyId: awsAccessKey,
+//     secretAccessKey: awsSecretAccessKey,
+//   },
+//   region: awsBucketRegion,
+// });
 
 // POST route to add a new gallery item
 router.post(
   "/:monumentId",
   upload.single("image"),
   async (request, response) => {
+    const uploadPath = "uploads/gallery/";
+
     try {
       if (!request.body.imgTitle || !request.file) {
         return response.status(400).send({
           message: "Send all required fields: imgTitle, image",
         });
       }
-      const { fileName, buffer } = await compressAndSaveFile(request.file);
+      let fileName = null;
+      if (request.file) {
+        if (request.file.size > 100 * 1024 * 1024) {
+          return response.status(400).send({
+            message: "File size exceeds the limit of 100MB",
+          });
+        }
+        fileName = await compressAndSaveImageorVideo(request.file, uploadPath);
+      }
+      // const params = {
+      //   Bucket: awsBucketName,
+      //   Key: fileName,
+      //   Body: buffer,
+      //   ContentType: request.file.mimetype,
+      // };
 
-      const params = {
-        Bucket: awsBucketName,
-        Key: fileName,
-        Body: buffer,
-        ContentType: request.file.mimetype,
-      };
+      // const command = new PutObjectCommand(params);
 
-      const command = new PutObjectCommand(params);
-
-      await s3.send(command);
+      // await s3.send(command);
 
       const newGalleryItem = {
         monumentId: request.params.monumentId,
@@ -97,6 +73,8 @@ router.post(
 
       return response.status(201).json(galleryItem);
     } catch (error) {
+      deletefilewithfoldername(request.file, uploadPath);
+
       console.error(error.message);
       return response.status(500).send({ message: "Internal Server Error" });
     }
@@ -111,16 +89,16 @@ router.get("/monument/:monumentId", async (request, response) => {
 
     const updatedGalleryItems = [];
     for (const galleryItem of galleryItems) {
-      const getObjectParams = {
-        Bucket: awsBucketName,
-        Key: galleryItem.image,
-      };
+      // const getObjectParams = {
+      //   Bucket: awsBucketName,
+      //   Key: galleryItem.image,
+      // };
 
-      const command = new GetObjectCommand(getObjectParams);
-      const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+      // const command = new GetObjectCommand(getObjectParams);
+      // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
       const updatedGalleryItem = {
         ...galleryItem.toObject(),
-        imageUrl: url,
+        imageUrl: "uploads/gallery/" + galleryItem.image,
       };
       updatedGalleryItems.push(updatedGalleryItem);
     }
@@ -139,17 +117,17 @@ router.get("/:id", async (request, response) => {
       return response.status(404).send({ message: "Gallery item not found" });
     }
 
-    const getObjectParams = {
-      Bucket: awsBucketName,
-      Key: galleryItem.image,
-    };
+    // const getObjectParams = {
+    //   Bucket: awsBucketName,
+    //   Key: galleryItem.image,
+    // };
 
-    const command = new GetObjectCommand(getObjectParams);
-    const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    // const command = new GetObjectCommand(getObjectParams);
+    // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
 
     const updatedGalleryItem = {
       ...galleryItem.toObject(),
-      imageUrl: url,
+      imageUrl: "uploads/gallery/" + galleryItem.image,
     };
 
     return response.status(200).json(updatedGalleryItem);
@@ -160,6 +138,7 @@ router.get("/:id", async (request, response) => {
 });
 
 router.put("/:id", upload.single("image"), async (request, response) => {
+  const uploadPath = "uploads/gallery/";
   try {
     let galleryItem = await Gallery.findById(request.params.id);
 
@@ -168,34 +147,42 @@ router.put("/:id", upload.single("image"), async (request, response) => {
     }
 
     let oldImageKey = galleryItem.image;
-
+    let fileName = oldImageKey;
     if (request.file) {
-      const { fileName, buffer } = await compressAndSaveFile(request.file);
-
-      const params = {
-        Bucket: awsBucketName,
-        Key: fileName,
-        Body: buffer,
-        ContentType: request.file.mimetype,
-      };
-
-      const command = new PutObjectCommand(params);
-
-      await s3.send(command);
-
-      galleryItem.image = fileName;
-
-      const deleteOldParams = {
-        Bucket: awsBucketName,
-        Key: oldImageKey,
-      };
-
-      const deleteOldCommand = new DeleteObjectCommand(deleteOldParams);
-      await s3.send(deleteOldCommand);
+      if (request.file.size > 100 * 1024 * 1024) {
+        return response.status(400).send({
+          message: "File size exceeds the limit of 100MB",
+        });
+      }
+      fileName = await compressAndSaveImageorVideo(request.file, uploadPath);
+      deletefilewithfoldername(oldImageKey, uploadPath);
     }
+    // if (request.file) {
+    //   const { fileName, buffer } = await compressAndSaveFile(request.file);
+
+    //   const params = {
+    //     Bucket: awsBucketName,
+    //     Key: fileName,
+    //     Body: buffer,
+    //     ContentType: request.file.mimetype,
+    //   };
+
+    //   const command = new PutObjectCommand(params);
+
+    //   await s3.send(command);
+
+    //   const deleteOldParams = {
+    //     Bucket: awsBucketName,
+    //     Key: oldImageKey,
+    //   };
+
+    //   const deleteOldCommand = new DeleteObjectCommand(deleteOldParams);
+    //   await s3.send(deleteOldCommand);
+    // }
 
     if (request.body.imgTitle) {
       galleryItem.imgTitle = request.body.imgTitle;
+      galleryItem.image = fileName;
     }
 
     await galleryItem.save();
