@@ -144,7 +144,7 @@ router.get("/", async (request, response) => {
 
       const updatedMonument = {
         ...monument.toObject(),
-        imageUrl: "uploads/coverimg/" + monument.cover_image,
+        imageUrl: "coverimg/" + monument.cover_image,
         userType: users.type,
       };
       updatedMonuments.push(updatedMonument);
@@ -178,7 +178,7 @@ router.get("/:id", async (request, response) => {
 
     const updatedMonumentItem = {
       ...monument.toObject(),
-      imageUrl: "uploads/coverimg/" + monument.cover_image,
+      imageUrl: "coverimg/" + monument.cover_image,
     };
 
     return response.status(200).json(updatedMonumentItem);

@@ -98,7 +98,7 @@ router.get("/monument/:monumentId", async (request, response) => {
       // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
       const updatedGalleryItem = {
         ...galleryItem.toObject(),
-        imageUrl: "uploads/gallery/" + galleryItem.image,
+        imageUrl: "gallery/" + galleryItem.image,
       };
       updatedGalleryItems.push(updatedGalleryItem);
     }
@@ -127,7 +127,7 @@ router.get("/:id", async (request, response) => {
 
     const updatedGalleryItem = {
       ...galleryItem.toObject(),
-      imageUrl: "uploads/gallery/" + galleryItem.image,
+      imageUrl: "gallery/" + galleryItem.image,
     };
 
     return response.status(200).json(updatedGalleryItem);

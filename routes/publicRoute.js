@@ -39,7 +39,7 @@ router.get("/", async (request, response) => {
 
       const updatedMonument = {
         ...monument.toObject(),
-        imageUrl: "uploads/coverimg/" + monument.cover_image,
+        imageUrl: "coverimg/" + monument.cover_image,
       };
       updatedMonuments.push(updatedMonument);
     }
@@ -70,7 +70,7 @@ router.get("/latest3/", async (request, response) => {
 
       const updatedMonument = {
         ...monument.toObject(),
-        imageUrl: "uploads/coverimg/" + monument.cover_image,
+        imageUrl: "coverimg/" + monument.cover_image,
       };
       updatedMonuments.push(updatedMonument);
     }
@@ -98,7 +98,7 @@ router.get("/:id", async (request, response) => {
 
     const updatedMonumentItem = {
       ...monument.toObject(),
-      imageUrl: "uploads/coverimg/" + monument.cover_image,
+      imageUrl: "coverimg/" + monument.cover_image,
     };
 
     const user = await User.findById(monument.user); // Assuming userId is the field linking to the User table
@@ -133,7 +133,7 @@ router.get("/monument/:monumentId", async (request, response) => {
       // const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
       const updatedGalleryItem = {
         ...galleryItem.toObject(),
-        imageUrl: "uploads/gallery/" + galleryItem.image,
+        imageUrl: "gallery/" + galleryItem.image,
       };
       updatedGalleryItems.push(updatedGalleryItem);
     }
